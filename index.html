@@ -1,169 +1,232 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Roblox Server Finder</title>
-    <style>
-        body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background-color: #121212;
-            color: #ffffff;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            height: 100vh;
-            margin: 0;
-        }
-        .container {
-            background-color: #1e1e1e;
-            padding: 30px;
-            border-radius: 10px;
-            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.5);
-            width: 100%;
-            max-width: 400px;
-            text-align: center;
-        }
-        h2 {
-            margin-top: 0;
-            color: #00a2ff;
-        }
-        input[type="text"] {
-            width: calc(100% - 20px);
-            padding: 10px;
-            margin: 15px 0;
-            border: 1px solid #333;
-            border-radius: 5px;
-            background-color: #2a2a2a;
-            color: white;
-            font-size: 16px;
-        }
-        input:focus {
-            outline: none;
-            border-color: #00a2ff;
-        }
-        button {
-            width: 100%;
-            padding: 10px;
-            background-color: #00a2ff;
-            color: white;
-            border: none;
-            border-radius: 5px;
-            font-size: 16px;
-            cursor: pointer;
-            font-weight: bold;
-            transition: background-color 0.2s;
-        }
-        button:hover {
-            background-color: #007acc;
-        }
-        button:disabled {
-            background-color: #555;
-            cursor: not-allowed;
-        }
-        #statusBox {
-            margin-top: 20px;
-            padding: 15px;
-            border-radius: 5px;
-            display: none;
-            text-align: left;
-            word-wrap: break-word;
-        }
-        .loading {
-            background-color: #333;
-            color: #ccc;
-            display: block !important;
-        }
-        .success {
-            background-color: #1a4d2e;
-            border: 1px solid #2d7a4a;
-            display: block !important;
-        }
-        .error {
-            background-color: #5c1a1a;
-            border: 1px solid #8a2d2d;
-            display: block !important;
-        }
-        .copy-btn {
-            margin-top: 10px;
-            background-color: #444;
-            font-size: 14px;
-        }
-    </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Roblox Server Finder</title>
+<style>
+    body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background:#121212; color:#fff;
+           display:flex; justify-content:center; align-items:center; min-height:100vh; margin:0; }
+    .container { background:#1e1e1e; padding:30px; border-radius:10px; box-shadow:0 4px 15px rgba(0,0,0,.5);
+                 width:100%; max-width:440px; text-align:center; box-sizing:border-box; margin:16px; }
+    h2 { margin-top:0; color:#00a2ff; }
+    .sub { color:#888; font-size:13px; margin:-6px 0 8px; }
+    input[type=text] { width:100%; box-sizing:border-box; padding:10px; margin:15px 0; border:1px solid #333;
+                       border-radius:5px; background:#2a2a2a; color:#fff; font-size:16px; }
+    input:focus { outline:none; border-color:#00a2ff; }
+    button { width:100%; padding:10px; background:#00a2ff; color:#fff; border:none; border-radius:5px;
+             font-size:16px; cursor:pointer; font-weight:bold; transition:background-color .2s; }
+    button:hover { background:#007acc; }
+    button:disabled { background:#555; cursor:not-allowed; }
+    button.secondary { background:#444; font-size:14px; margin-top:8px; }
+    button.secondary:hover { background:#555; }
+    #statusBox { margin-top:20px; padding:15px; border-radius:5px; display:none; text-align:left; word-wrap:break-word; }
+    .loading { background:#2a2a2a; color:#ccc; display:block !important; }
+    .success { background:#1a4d2e; border:1px solid #2d7a4a; display:block !important; }
+    .error { background:#5c1a1a; border:1px solid #8a2d2d; display:block !important; }
+
+    .bar { height:14px; background:#111; border-radius:7px; overflow:hidden; margin:10px 0 4px; position:relative; }
+    .bar > div { height:100%; width:0%; background:linear-gradient(90deg,#00a2ff,#00e0a0); transition:width .4s ease; }
+    .bar.indeterminate > div { width:35% !important; animation:slide 1.2s infinite ease-in-out; }
+    @keyframes slide { 0%{margin-left:-35%} 100%{margin-left:100%} }
+    .pct { display:flex; justify-content:space-between; font-size:12px; color:#aaa; }
+    .stats { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:12px; }
+    .stat { background:#1e1e1e; border-radius:6px; padding:8px 10px; }
+    .stat b { display:block; font-size:18px; color:#fff; }
+    .stat span { font-size:11px; color:#888; text-transform:uppercase; letter-spacing:.5px; }
+    .places { display:flex; gap:6px; margin:10px 0 0; }
+    .pl { flex:1; font-size:11px; text-align:center; padding:5px 2px; border-radius:4px; background:#1e1e1e; color:#777; }
+    .pl.active { background:#00a2ff33; color:#7fd0ff; outline:1px solid #00a2ff; }
+    .pl.done { background:#1a4d2e; color:#9be3b5; }
+    .log { margin-top:10px; font-size:12px; color:#e0b050; }
+    .copy-btn { margin-top:10px; background:#444; font-size:14px; }
+</style>
 </head>
 <body>
-
 <div class="container">
     <h2>Player Tracker</h2>
+    <div class="sub">Steal a Brainrot &middot; main game + 3 sub-places</div>
     <input type="text" id="usernameInput" placeholder="Enter Roblox Username..." autocomplete="off">
-    <button id="searchBtn" onclick="startSearch()">Find Server</button>
-
+    <button id="searchBtn">Find Server</button>
+    <button id="cancelBtn" class="secondary" style="display:none">Cancel</button>
     <div id="statusBox"></div>
 </div>
 
 <script>
-    // CHANGE THIS to your backend URL (e.g., http://localhost:3000/api/find if using Next.js locally)
     const BACKEND_URL = "https://new-player-nine.vercel.app/api/find";
 
+    const $ = (id) => document.getElementById(id);
+    const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    const fmtTime = (ms) => { const s = Math.floor(ms/1000); return Math.floor(s/60) + ":" + String(s%60).padStart(2,"0"); };
+
+    let controller = null;
+    let tick = null;
+
+    $('searchBtn').addEventListener('click', startSearch);
+    $('cancelBtn').addEventListener('click', () => controller && controller.abort());
+    $('usernameInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') startSearch(); });
+
+    function showStatus(html, type) {
+        const box = $('statusBox');
+        box.innerHTML = html;
+        box.className = type;
+    }
+
+    function renderProgress(s) {
+        const elapsed = Date.now() - s.t0;
+        const players = s.base.players + s.cur.players;
+        const servers = s.base.servers + s.cur.servers;
+        const pages   = s.base.pages + s.cur.pages;
+
+        let pct = null;
+        if (s.estimate) pct = Math.min(99, Math.round((players / s.estimate) * 100));
+        const rate = elapsed > 2000 ? Math.round(players / (elapsed / 1000)) : 0;
+
+        const placeLabels = s.places.length ? s.places : ["Main game","Sub-place 1","Sub-place 2","Sub-place 3"];
+        const placeHtml = placeLabels.map((l, i) =>
+            `<div class="pl ${i < s.placeIdx ? 'done' : i === s.placeIdx ? 'active' : ''}">${esc(l)}</div>`).join("");
+
+        showStatus(`
+            <div><strong>Searching for ${esc(s.username)}</strong></div>
+            <div class="bar ${pct === null ? 'indeterminate' : ''}"><div style="width:${pct ?? 35}%"></div></div>
+            <div class="pct"><span>${pct === null ? 'Scanning…' : pct + '%'}</span><span>${fmtTime(elapsed)}</span></div>
+            <div class="places">${placeHtml}</div>
+            <div class="stats">
+                <div class="stat"><b>${servers.toLocaleString()}</b><span>Servers scanned</span></div>
+                <div class="stat"><b>${players.toLocaleString()}${s.estimate ? ' / ~' + s.estimate.toLocaleString() : ''}</b><span>Players scanned</span></div>
+                <div class="stat"><b>${s.placeIdx + 1} / ${placeLabels.length}</b><span>${esc(s.placeLabel || 'Place')}</span></div>
+                <div class="stat"><b>${rate ? rate + '/s' : '—'}</b><span>Scan speed</span></div>
+            </div>
+            ${s.warn ? `<div class="log">⚠ ${esc(s.warn)}</div>` : ''}
+        `, "loading");
+    }
+
     async function startSearch() {
-        const username = document.getElementById('usernameInput').value.trim();
-        const searchBtn = document.getElementById('searchBtn');
-        const statusBox = document.getElementById('statusBox');
+        const username = $('usernameInput').value.trim();
+        if (!username) return showStatus("Please enter a username.", "error");
+        if (controller) return;
 
-        if (!username) {
-            showStatus("Please enter a username.", "error");
-            return;
-        }
+        controller = new AbortController();
+        $('searchBtn').disabled = true;
+        $('searchBtn').innerText = "Scanning...";
+        $('cancelBtn').style.display = "block";
 
-        // Set UI to loading state
-        searchBtn.disabled = true;
-        searchBtn.innerText = "Scanning Servers...";
-        showStatus(`Searching for ${username}... This may take a minute if the game is full.`, "loading");
+        const s = {
+            username, t0: Date.now(), estimate: null, places: [],
+            placeIdx: 0, placeLabel: "", warn: "",
+            base: { servers: 0, players: 0, pages: 0 },
+            cur:  { servers: 0, players: 0, pages: 0 }
+        };
+        renderProgress(s);
+        tick = setInterval(() => renderProgress(s), 1000);
 
         try {
-            const response = await fetch(`${BACKEND_URL}?username=${encodeURIComponent(username)}`);
-            const data = await response.json();
-
-            if (response.ok && data.success) {
-                // Found the player
+            const result = await runScan(s, controller.signal);
+            clearInterval(tick);
+            if (result.type === "found") {
+                const players = s.base.players + s.cur.players;
                 showStatus(`
                     <strong>Target Found!</strong><br><br>
-                    <strong>Username:</strong> ${data.username}<br>
-                    <strong>Place ID:</strong> ${data.placeId}<br>
-                    <strong>Job ID:</strong> ${data.jobId}<br>
-                    <button class="copy-btn" onclick="copyToClipboard('${data.jobId}')">Copy Job ID</button>
-                    <button class="copy-btn" onclick="launchRoblox('${data.placeId}', '${data.jobId}')" style="background-color: #00a2ff; margin-top:5px;">Join Game</button>
+                    <strong>Username:</strong> ${esc(result.username)}<br>
+                    <strong>Location:</strong> ${esc(result.placeLabel)} (${esc(result.placeId)})<br>
+                    <strong>Job ID:</strong> ${esc(result.jobId)}<br>
+                    <span style="color:#9be3b5;font-size:12px">Found after scanning ${players.toLocaleString()} players in ${fmtTime(Date.now()-s.t0)}</span><br>
+                    <button class="copy-btn" id="copyBtn">Copy Job ID</button>
+                    <button class="copy-btn" id="joinBtn" style="background:#00a2ff;margin-top:5px">Join Game</button>
                 `, "success");
+                $('copyBtn').onclick = () => { navigator.clipboard.writeText(result.jobId); alert("Job ID copied to clipboard!"); };
+                $('joinBtn').onclick = () => { window.location.href = `roblox://placeId=${result.placeId}&gameInstanceId=${result.jobId}`; };
+            } else if (result.type === "notfound") {
+                showStatus(`<strong>Not found:</strong><br>${esc(result.message)}<br><span style="color:#ccc;font-size:12px">Scanned ${(s.base.servers+s.cur.servers).toLocaleString()} servers / ${(s.base.players+s.cur.players).toLocaleString()} players.</span>`, "error");
             } else {
-                // Not found or custom error from backend
-                showStatus(`<strong>Search Failed:</strong><br>${data.message || data.error}`, "error");
+                showStatus(`<strong>Error:</strong><br>${esc(result.error)}`, "error");
             }
-        } catch (error) {
-            // Network or server crash
-            showStatus(`<strong>Connection Error:</strong><br>Could not reach the backend (${error.message}). Check the function logs on Vercel for ${BACKEND_URL}.`, "error");
+        } catch (err) {
+            clearInterval(tick);
+            if (err.name === "AbortError") showStatus("Search cancelled.", "error");
+            else showStatus(`<strong>Connection Error:</strong><br>${esc(err.message)}<br><span style="font-size:12px">Check the function logs on Vercel for ${esc(BACKEND_URL)}.</span>`, "error");
         } finally {
-            // Reset button
-            searchBtn.disabled = false;
-            searchBtn.innerText = "Find Server";
+            controller = null;
+            $('searchBtn').disabled = false;
+            $('searchBtn').innerText = "Find Server";
+            $('cancelBtn').style.display = "none";
         }
     }
 
-    function showStatus(htmlContent, type) {
-        const statusBox = document.getElementById('statusBox');
-        statusBox.innerHTML = htmlContent;
-        statusBox.className = type; 
-    }
+    // Calls the backend repeatedly; each call scans ~45s and returns a resume point.
+    async function runScan(s, signal) {
+        let next = { placeIdx: 0, cursor: "" };
+        let failures = 0;
 
-    function copyToClipboard(text) {
-        navigator.clipboard.writeText(text);
-        alert("Job ID copied to clipboard!");
-    }
+        while (true) {
+            const params = new URLSearchParams({ username: s.username, placeIdx: next.placeIdx, cursor: next.cursor });
+            if (s.estimate) params.set("est", s.estimate);
 
-    function launchRoblox(placeId, jobId) {
-        // Deep link to force Roblox client to launch into the specific server
-        window.location.href = `roblox://placeId=${placeId}&gameInstanceId=${jobId}`;
+            let lastNext = next;
+            let end = null;
+            s.cur = { servers: 0, players: 0, pages: 0 };
+
+            try {
+                const res = await fetch(`${BACKEND_URL}?${params}`, { signal });
+                if (!res.ok || !res.body) {
+                    const txt = (await res.text()).slice(0, 200);
+                    throw new Error(`HTTP ${res.status}: ${txt}`);
+                }
+
+                const reader = res.body.getReader();
+                const dec = new TextDecoder();
+                let buf = "";
+                while (true) {
+                    const { value, done } = await reader.read();
+                    if (done) break;
+                    buf += dec.decode(value, { stream: true });
+                    let nl;
+                    while ((nl = buf.indexOf("\n")) >= 0) {
+                        const line = buf.slice(0, nl).trim();
+                        buf = buf.slice(nl + 1);
+                        if (!line) continue;
+                        let ev; try { ev = JSON.parse(line); } catch { continue; }
+
+                        if (ev.type === "start") {
+                            if (ev.estimate) s.estimate = ev.estimate;
+                            if (ev.places) s.places = ev.places;
+                        } else if (ev.type === "progress") {
+                            s.cur = ev.counts; s.placeIdx = ev.placeIdx; s.placeLabel = ev.placeLabel;
+                            lastNext = ev.next;
+                            renderProgress(s);
+                        } else if (ev.type === "warn") {
+                            s.warn = ev.message; renderProgress(s);
+                        } else if (ev.type === "continue") {
+                            s.cur = ev.counts || s.cur; next = ev.next; end = "continue";
+                        } else if (ev.type === "found" || ev.type === "notfound" || ev.type === "error") {
+                            if (ev.counts) s.cur = ev.counts;
+                            return ev;
+                        }
+                    }
+                }
+            } catch (err) {
+                if (err.name === "AbortError") throw err;
+                failures++;
+                if (failures > 4) throw err;
+                // stream cut (timeout / network blip): keep what we scanned and resume from the last checkpoint
+                s.warn = `Connection hiccup, resuming (${failures}/4)…`;
+                s.base.servers += s.cur.servers; s.base.players += s.cur.players; s.base.pages += s.cur.pages;
+                next = lastNext;
+                await new Promise((r) => setTimeout(r, 1500));
+                continue;
+            }
+
+            // Stream finished: either a clean "continue" or a silent cut.
+            s.base.servers += s.cur.servers; s.base.players += s.cur.players; s.base.pages += s.cur.pages;
+            if (end !== "continue") {
+                failures++;
+                if (failures > 4) throw new Error("Backend stopped responding mid-scan.");
+                next = lastNext;
+            } else {
+                s.warn = "";
+            }
+        }
     }
 </script>
-
 </body>
 </html>
