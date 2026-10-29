@@ -2,20 +2,20 @@ export default async function handler(req, res) {
     res.setHeader('Access-Control-Allow-Credentials', true);
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
-    
+
     if (req.method === 'OPTIONS') return res.status(200).end();
 
     const username = req.query.username || req.body?.username;
     if (!username) return res.status(400).json({ error: "Username required" });
 
-    // Ensure these are Place IDs, not Universe IDs
-// Scan the Main Game first, then the sub-places
-const PLACE_IDS = [
-    "109983668079237", 
-    "78906538690694", 
-    "119594317142884", 
-    "128855408206367"
-];
+    const PLACE_IDS = [
+        "109983668079237",
+        "78906538690694",
+        "119594317142884",
+        "128855408206367"
+    ];
+
+    const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
     const chunkArray = (array, size) => {
         const chunked = [];
@@ -23,74 +23,112 @@ const PLACE_IDS = [
         return chunked;
     };
 
+    // Fetch JSON with retry/backoff on 429 and transient errors
+    const fetchJson = async (url, options = {}, retries = 4) => {
+        for (let attempt = 0; attempt <= retries; attempt++) {
+            try {
+                const r = await fetch(url, options);
+                if (r.status === 429 || r.status >= 500) {
+                    const retryAfter = Number(r.headers.get("retry-after")) || 0;
+                    await sleep(Math.max(retryAfter * 1000, 800 * (attempt + 1)));
+                    continue;
+                }
+                let body = null;
+                try { body = await r.json(); } catch (_) {}
+                return { ok: r.ok, status: r.status, body };
+            } catch (e) {
+                await sleep(800 * (attempt + 1));
+            }
+        }
+        return { ok: false, status: 429, body: null };
+    };
+
     try {
-        const userRes = await fetch("https://users.roblox.com/v1/usernames/users", {
+        const userRes = await fetchJson("https://users.roblox.com/v1/usernames/users", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ usernames: [username], excludeBannedUsers: true })
         });
-        const userData = await userRes.json();
-        
-        if (!userData.data || userData.data.length === 0) {
+        const userData = userRes.body;
+
+        if (!userData?.data || userData.data.length === 0) {
             return res.status(404).json({ error: "Roblox user not found", robloxData: userData });
         }
         const userId = userData.data[0].id;
 
-        const thumbRes = await fetch(`https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds=${userId}&size=150x150&format=Png&isCircular=false`);
-        const thumbData = await thumbRes.json();
-        const targetImageUrl = thumbData.data[0]?.imageUrl;
+        const thumbRes = await fetchJson(
+            `https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds=${userId}&size=150x150&format=Png&isCircular=false`
+        );
+        const targetImageUrl = thumbRes.body?.data?.[0]?.imageUrl;
 
         if (!targetImageUrl) {
-             return res.status(400).json({ error: "Could not fetch target avatar", robloxData: thumbData });
+            return res.status(400).json({ error: "Could not fetch target avatar", robloxData: thumbRes.body });
         }
+
+        const placeErrors = [];
 
         for (const placeId of PLACE_IDS) {
             let cursor = "";
-            let pageAttempts = 0; 
+            let pageAttempts = 0;
 
             while (cursor !== null && pageAttempts < 10) {
                 pageAttempts++;
-                const serverRes = await fetch(`https://games.roblox.com/v1/games/${placeId}/servers/Public?limit=100&cursor=${cursor}`);
-                const serverData = await serverRes.json();
+                const cursorParam = cursor ? `&cursor=${encodeURIComponent(cursor)}` : "";
+                const serverRes = await fetchJson(
+                    `https://games.roblox.com/v1/games/${placeId}/servers/Public?limit=100${cursorParam}`
+                );
+                const serverData = serverRes.body;
 
-                // THE FIX: Instead of breaking silently, show exactly what Roblox returned
-                if (!serverData.data) {
-                    return res.status(400).json({ 
-                        error: `Roblox rejected the server request for Place ID: ${placeId}. Ensure this is a valid Place ID, not a Universe ID.`, 
-                        robloxResponse: serverData 
-                    });
+                // Don't abort everything: record the failure and move to the next place
+                if (!serverData?.data) {
+                    placeErrors.push({ placeId, status: serverRes.status, response: serverData });
+                    break;
                 }
 
-                const serverChecks = serverData.data.map(async (server) => {
-                    if (!server.playerTokens || server.playerTokens.length === 0) return null;
-                    const tokenBatches = chunkArray(server.playerTokens, 20);
-                    
-                    for (const batch of tokenBatches) {
-                        const tokensParam = batch.join(",");
-                        const tokenThumbRes = await fetch(`https://thumbnails.roblox.com/v1/users/avatar-headshot?format=Png&isCircular=false&size=150x150&playerTokens=${tokensParam}`);
-                        const tokenThumbData = await tokenThumbRes.json();
+                // Process servers in small groups to avoid rate limits
+                const servers = serverData.data.filter(
+                    (s) => s.playerTokens && s.playerTokens.length > 0
+                );
 
-                        if (tokenThumbData && tokenThumbData.data) {
-                            for (const player of tokenThumbData.data) {
-                                if (player.imageUrl === targetImageUrl) return server.id; 
+                for (const group of chunkArray(servers, 5)) {
+                    const results = await Promise.all(
+                        group.map(async (server) => {
+                            for (const batch of chunkArray(server.playerTokens, 20)) {
+                                const tokenRes = await fetchJson(
+                                    `https://thumbnails.roblox.com/v1/users/avatar-headshot?format=Png&isCircular=false&size=150x150&playerTokens=${batch.join(",")}`
+                                );
+                                const players = tokenRes.body?.data;
+                                if (players) {
+                                    for (const player of players) {
+                                        if (player.imageUrl === targetImageUrl) return server.id;
+                                    }
+                                }
                             }
-                        }
+                            return null;
+                        })
+                    );
+
+                    const foundJobId = results.find((id) => id !== null);
+                    if (foundJobId) {
+                        return res.status(200).json({
+                            success: true,
+                            username,
+                            placeId,
+                            jobId: foundJobId
+                        });
                     }
-                    return null;
-                });
-
-                const results = await Promise.all(serverChecks);
-                const foundJobId = results.find(id => id !== null);
-
-                if (foundJobId) {
-                    return res.status(200).json({ success: true, username: username, placeId: placeId, jobId: foundJobId });
                 }
 
-                cursor = serverData.nextPageCursor;
+                cursor = serverData.nextPageCursor || null;
+                await sleep(300);
             }
         }
 
-        return res.status(404).json({ success: false, message: "Player not found. They might be offline or in a private server." });
+        return res.status(404).json({
+            success: false,
+            message: "Player not found. They might be offline or in a private server.",
+            placeErrors
+        });
 
     } catch (error) {
         return res.status(500).json({ error: "Server logic error", details: error.message });
