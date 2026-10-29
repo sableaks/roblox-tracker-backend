@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Roblox Server Finder</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #121212;
+            color: #ffffff;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+        }
+        .container {
+            background-color: #1e1e1e;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.5);
+            width: 100%;
+            max-width: 400px;
+            text-align: center;
+        }
+        h2 {
+            margin-top: 0;
+            color: #00a2ff;
+        }
+        input[type="text"] {
+            width: calc(100% - 20px);
+            padding: 10px;
+            margin: 15px 0;
+            border: 1px solid #333;
+            border-radius: 5px;
+            background-color: #2a2a2a;
+            color: white;
+            font-size: 16px;
+        }
+        input:focus {
+            outline: none;
+            border-color: #00a2ff;
+        }
+        button {
+            width: 100%;
+            padding: 10px;
+            background-color: #00a2ff;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            font-size: 16px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: background-color 0.2s;
+        }
+        button:hover {
+            background-color: #007acc;
+        }
+        button:disabled {
+            background-color: #555;
+            cursor: not-allowed;
+        }
+        #statusBox {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 5px;
+            display: none;
+            text-align: left;
+            word-wrap: break-word;
+        }
+        .loading {
+            background-color: #333;
+            color: #ccc;
+            display: block !important;
+        }
+        .success {
+            background-color: #1a4d2e;
+            border: 1px solid #2d7a4a;
+            display: block !important;
+        }
+        .error {
+            background-color: #5c1a1a;
+            border: 1px solid #8a2d2d;
+            display: block !important;
+        }
+        .copy-btn {
+            margin-top: 10px;
+            background-color: #444;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2>Player Tracker</h2>
+    <input type="text" id="usernameInput" placeholder="Enter Roblox Username..." autocomplete="off">
+    <button id="searchBtn" onclick="startSearch()">Find Server</button>
+
+    <div id="statusBox"></div>
+</div>
+
+<script>
+    // CHANGE THIS to your backend URL (e.g., http://localhost:3000/api/find if using Next.js locally)
+    const BACKEND_URL = "http://localhost:3000/api/handler"; 
+
+    async function startSearch() {
+        const username = document.getElementById('usernameInput').value.trim();
+        const searchBtn = document.getElementById('searchBtn');
+        const statusBox = document.getElementById('statusBox');
+
+        if (!username) {
+            showStatus("Please enter a username.", "error");
+            return;
+        }
+
+        // Set UI to loading state
+        searchBtn.disabled = true;
+        searchBtn.innerText = "Scanning Servers...";
+        showStatus(`Searching for ${username}... This may take a minute if the game is full.`, "loading");
+
+        try {
+            const response = await fetch(`${BACKEND_URL}?username=${username}`);
+            const data = await response.json();
+
+            if (response.ok && data.success) {
+                // Found the player
+                showStatus(`
+                    <strong>Target Found!</strong><br><br>
+                    <strong>Username:</strong> ${data.username}<br>
+                    <strong>Place ID:</strong> ${data.placeId}<br>
+                    <strong>Job ID:</strong> ${data.jobId}<br>
+                    <button class="copy-btn" onclick="copyToClipboard('${data.jobId}')">Copy Job ID</button>
+                    <button class="copy-btn" onclick="launchRoblox('${data.placeId}', '${data.jobId}')" style="background-color: #00a2ff; margin-top:5px;">Join Game</button>
+                `, "success");
+            } else {
+                // Not found or custom error from backend
+                showStatus(`<strong>Search Failed:</strong><br>${data.message || data.error}`, "error");
+            }
+        } catch (error) {
+            // Network or server crash
+            showStatus(`<strong>Connection Error:</strong><br>Could not connect to the backend server. Make sure it is running at ${BACKEND_URL}.`, "error");
+        } finally {
+            // Reset button
+            searchBtn.disabled = false;
+            searchBtn.innerText = "Find Server";
+        }
+    }
+
+    function showStatus(htmlContent, type) {
+        const statusBox = document.getElementById('statusBox');
+        statusBox.innerHTML = htmlContent;
+        statusBox.className = type; 
+    }
+
+    function copyToClipboard(text) {
+        navigator.clipboard.writeText(text);
+        alert("Job ID copied to clipboard!");
+    }
+
+    function launchRoblox(placeId, jobId) {
+        // Deep link to force Roblox client to launch into the specific server
+        window.location.href = `roblox://placeId=${placeId}&gameInstanceId=${jobId}`;
+    }
+</script>
+
+</body>
+</html>
