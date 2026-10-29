@@ -13,6 +13,13 @@ const TIME_BUDGET_MS = 45000;   // must stay below maxDuration in vercel.json (6
 const CONCURRENCY = 3;          // parallel thumbnail batch requests
 const BATCH_SIZE = 100;         // max tokens per thumbnails batch request
 
+// Optional env vars (Vercel -> Settings -> Environment Variables):
+//   ROBLOX_DOMAIN  - host to use instead of roblox.com (e.g. a proxy domain). Default: roblox.com
+//   ROBLOX_COOKIE  - .ROBLOSECURITY of a THROWAWAY account; logged-in requests are rate-limited far less
+const ROBLOX_DOMAIN = (process.env.ROBLOX_DOMAIN || "roblox.com").trim();
+const ROBLOX_COOKIE = (process.env.ROBLOX_COOKIE || "").trim();
+const rb = (url) => url.replace(/^https:\/\/([a-z]+)\.roblox\.com/, `https://$1.${ROBLOX_DOMAIN}`);
+
 export default async function handler(req, res) {
     res.setHeader("Access-Control-Allow-Origin", "*");
     res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
@@ -45,25 +52,26 @@ export default async function handler(req, res) {
     };
 
     const fetchJson = async (url, options = {}, retries = 3) => {
-        let status = 0;
+        let status = 0, retryAfter = 0;
+        const headers = { ...(options.headers || {}) };
+        if (ROBLOX_COOKIE) headers["Cookie"] = `.ROBLOSECURITY=${ROBLOX_COOKIE}`;
         for (let attempt = 0; attempt <= retries; attempt++) {
-            if (Date.now() > deadline + 8000) break;
             try {
-                const r = await fetch(url, options);
+                const r = await fetch(rb(url), { ...options, headers });
                 status = r.status;
                 if (r.status === 429 || r.status >= 500) {
-                    const ra = Number(r.headers.get("retry-after")) || 0;
-                    await sleep(Math.min(Math.max(ra * 1000, 700 * (attempt + 1)), 5000));
+                    retryAfter = Number(r.headers.get("retry-after")) || 0;
+                    if (attempt < retries) await sleep(Math.min(Math.max(retryAfter * 1000, 700 * (attempt + 1)), 5000));
                     continue;
                 }
                 let body = null;
                 try { body = await r.json(); } catch (_) {}
-                return { ok: r.ok, status: r.status, body };
+                return { ok: r.ok, status: r.status, body, retryAfter: 0 };
             } catch (e) {
-                await sleep(700 * (attempt + 1));
+                if (attempt < retries) await sleep(700 * (attempt + 1));
             }
         }
-        return { ok: false, status: status || 429, body: null };
+        return { ok: false, status: status || 429, body: null, retryAfter };
     };
 
     try {
@@ -130,13 +138,27 @@ export default async function handler(req, res) {
                 }
 
                 const cursorParam = cursor ? `&cursor=${encodeURIComponent(cursor)}` : "";
-                const serverRes = await fetchJson(
-                    `https://games.roblox.com/v1/games/${place.id}/servers/Public?sortOrder=Desc&limit=100${cursorParam}`
-                );
+                const pageUrl = `https://games.roblox.com/v1/games/${place.id}/servers/Public?sortOrder=Desc&limit=100${cursorParam}`;
+
+                let serverRes;
+                for (let attempt = 0; ; attempt++) {
+                    serverRes = await fetchJson(pageUrl, {}, 0);
+                    if (serverRes.body?.data) break;
+                    if (serverRes.status === 429 || serverRes.status >= 500) {
+                        const wait = Math.min(Math.max(serverRes.retryAfter * 1000, 2000 * (attempt + 1)), 10000);
+                        if (Date.now() + wait > deadline) {
+                            return finish({ type: "continue", next: { placeIdx: pi, cursor }, counts, rateLimited: true });
+                        }
+                        send({ type: "warn", message: `Roblox is rate-limiting us (HTTP ${serverRes.status}). Waiting ${Math.round(wait / 1000)}s and retrying…` });
+                        await sleep(wait);
+                        continue;
+                    }
+                    break; // some other error (403/404…)
+                }
 
                 if (!serverRes.body?.data) {
                     placeErrors.push({ placeId: place.id, status: serverRes.status });
-                    send({ type: "warn", message: `${place.label}: Roblox returned status ${serverRes.status}, skipping rest of this place` });
+                    send({ type: "warn", message: `${place.label}: Roblox returned HTTP ${serverRes.status}, skipping this place` });
                     break;
                 }
 
@@ -156,20 +178,32 @@ export default async function handler(req, res) {
                             requestId: token, type: "AvatarHeadShot", token,
                             size: "150x150", format: "Png", isCircular: false
                         }));
-                        const r = await fetchJson("https://thumbnails.roblox.com/v1/batch", {
-                            method: "POST",
-                            headers: { "Content-Type": "application/json" },
-                            body: JSON.stringify(payload)
-                        });
-                        for (const p of r.body?.data || []) {
-                            if (p.imageUrl === targetImageUrl) return tokenToServer.get(p.requestId) || null;
+                        for (let attempt = 0; attempt < 3; attempt++) {
+                            const r = await fetchJson("https://thumbnails.roblox.com/v1/batch", {
+                                method: "POST",
+                                headers: { "Content-Type": "application/json" },
+                                body: JSON.stringify(payload)
+                            }, 0);
+                            if (r.body?.data) {
+                                for (const p of r.body.data) {
+                                    if (p.imageUrl === targetImageUrl) return { found: tokenToServer.get(p.requestId) || null, checked: tokens.length, failed: 0 };
+                                }
+                                return { found: null, checked: tokens.length, failed: 0 };
+                            }
+                            if (Date.now() > deadline) break;
+                            await sleep(Math.min(Math.max(r.retryAfter * 1000, 1500 * (attempt + 1)), 6000));
                         }
-                        return null;
+                        return { found: null, checked: 0, failed: tokens.length };
                     }));
 
-                    counts.players += group.reduce((n, b) => n + b.length, 0);
+                    counts.players += results.reduce((n, r) => n + r.checked, 0);
+                    const failedNow = results.reduce((n, r) => n + r.failed, 0);
+                    if (failedNow) {
+                        counts.failed = (counts.failed || 0) + failedNow;
+                        send({ type: "warn", message: `${counts.failed} players could not be checked (Roblox rate limit) – they may be skipped` });
+                    }
 
-                    const jobId = results.find((id) => id);
+                    const jobId = results.map((r) => r.found).find((id) => id);
                     if (jobId) {
                         return finish({ type: "found", username, placeId: place.id, placeLabel: place.label, jobId, counts });
                     }

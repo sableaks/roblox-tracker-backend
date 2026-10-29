@@ -157,6 +157,7 @@
     async function runScan(s, signal) {
         let next = { placeIdx: 0, cursor: "" };
         let failures = 0;
+        let stalls = 0;
 
         while (true) {
             const params = new URLSearchParams({ username: s.username, placeIdx: next.placeIdx, cursor: next.cursor });
@@ -218,6 +219,12 @@
 
             // Stream finished: either a clean "continue" or a silent cut.
             s.base.servers += s.cur.servers; s.base.players += s.cur.players; s.base.pages += s.cur.pages;
+            if (end === "continue" && s.cur.players === 0 && s.cur.pages === 0) {
+                stalls++;
+                if (stalls >= 3) {
+                    return { type: "error", error: "Roblox is blocking/rate-limiting the Vercel server (HTTP 429), so nothing could be scanned. This is an IP-level limit, not a bug. Fix: set the ROBLOX_COOKIE (throwaway account) or ROBLOX_DOMAIN environment variable in Vercel and redeploy – see the README steps." };
+                }
+            } else if (end === "continue") { stalls = 0; }
             if (end !== "continue") {
                 failures++;
                 if (failures > 4) throw new Error("Backend stopped responding mid-scan.");
