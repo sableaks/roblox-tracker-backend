@@ -121,7 +121,7 @@
         showStatus(`Searching for ${username}... This may take a minute if the game is full.`, "loading");
 
         try {
-            const response = await fetch(`${BACKEND_URL}?username=${username}`);
+            const response = await fetch(`${BACKEND_URL}?username=${encodeURIComponent(username)}`);
             const data = await response.json();
 
             if (response.ok && data.success) {
@@ -140,7 +140,7 @@
             }
         } catch (error) {
             // Network or server crash
-            showStatus(`<strong>Connection Error:</strong><br>Could not connect to the backend server. Make sure it is running at ${BACKEND_URL}.`, "error");
+            showStatus(`<strong>Connection Error:</strong><br>Could not reach the backend (${error.message}). Check the function logs on Vercel for ${BACKEND_URL}.`, "error");
         } finally {
             // Reset button
             searchBtn.disabled = false;
