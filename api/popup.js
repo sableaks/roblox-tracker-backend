@@ -2,7 +2,7 @@ document.getElementById("findBtn").addEventListener("click", async () => {
     const username = document.getElementById("usernameInput").value;
     
     // Replace with your actual Vercel URL
-    const vercelUrl = `https://your-vercel-app.vercel.app/api/find?username=${username}`;
+    const vercelUrl = `https://new-player-nine.vercel.app/api/find?username=${username}`;
     
     try {
         const response = await fetch(vercelUrl);
