@@ -93,20 +93,30 @@ export default async function handler(req, res) {
                 for (const group of chunkArray(servers, 5)) {
                     const results = await Promise.all(
                         group.map(async (server) => {
-                            for (const batch of chunkArray(server.playerTokens, 20)) {
-                                const tokenRes = await fetchJson(
-                                    `https://thumbnails.roblox.com/v1/users/avatar-headshot?format=Png&isCircular=false&size=150x150&playerTokens=${batch.join(",")}`
-                                );
-                                const players = tokenRes.body?.data;
-                                if (players) {
-                                    for (const player of players) {
-                                        if (player.imageUrl === targetImageUrl) return server.id;
-                                    }
-                                }
-                            }
-                            return null;
-                        })
-                    );
+for (const batch of chunkArray(server.playerTokens, 50)) {
+    // Form the payload for the POST batch endpoint
+    const batchPayload = batch.map(token => ({
+        requestId: token,
+        type: "AvatarHeadShot",
+        token: token,
+        size: "150x150",
+        format: "Png",
+        isCircular: false
+    }));
+
+    const tokenRes = await fetchJson("https://thumbnails.roblox.com/v1/batch", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(batchPayload)
+    });
+
+    const players = tokenRes.body?.data;
+    if (players) {
+        for (const player of players) {
+            if (player.imageUrl === targetImageUrl) return server.id;
+        }
+    }
+}
 
                     const foundJobId = results.find((id) => id !== null);
                     if (foundJobId) {
